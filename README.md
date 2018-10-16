@@ -2,7 +2,12 @@
 
 Interceptors for asynchronous web handlers.
 
-Check out [the blog post]().
+Check out [the blog
+post](https://lispcast.com/a-model-of-interceptors/).
+
+## Current version
+
+Please use the git sha method of dependencies.
 
 ## Usage
 
