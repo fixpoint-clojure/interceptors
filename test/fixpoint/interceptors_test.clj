@@ -27,6 +27,11 @@
 (defn constantly-error [_]
   (throw (ex-info "Error" {})))
 
+(defn constantly-error-async [_]
+  (let [d (d/deferred)]
+    (d/error! d (ex-info "Async error." {:async true}))
+    d))
+
 (defspec chain-associative
   1000
   (prop/for-all [a gen-interceptor
@@ -114,3 +119,51 @@
           i1 (chain a)
           i2 (chain (make-reduced a) b)]
       (= (run i1 x) (run i2 x)))))
+
+(defspec chain-error-async
+  1000
+  (prop/for-all [i (gen/vector gen-interceptor)]
+    (let [e constantly-error-async]
+      (:async (ex-data @(run (chain i e) 0))))))
+
+(deftest error-order-test
+  (let [i (chain {:error (fn [e] (if (:a (ex-data e))
+                                   (ex-info "Wrong" {:wrong true})
+                                   (ex-info "Right" {:right true})))}
+                 {:enter (fn [_] (throw (ex-info "Error." {:a true})))
+                  :error (fn [e] (ex-info "Transform" {}))})]
+    (is (:right (ex-data (run i 0))))
+    (is (not (:wrong (ex-data (run i 0)))))))
+
+(deftest error-order-test-async
+  (let [i (chain {:error (fn [e] (if (:a (ex-data e))
+                                   (ex-info "Wrong" {:wrong true})
+                                   (ex-info "Right" {:right true})))}
+                 {:enter (fn [_] (defer-val 0))}
+                 {:enter (fn [_] (throw (ex-info "Error." {:a true})))
+                  :error (fn [e] (ex-info "Transform" {}))})]
+    
+    (is (:right (ex-data @(run i 0))))
+    (is (not (:wrong (ex-data @(run i 0)))))))
+
+(deftest error-order-test-async-leave
+  (let [i (chain {:error (fn [e] (if (:a (ex-data e))
+                                   (ex-info "Right" {:right true})
+                                   (ex-info "Wrong" {:wrong true})))}
+                 {:enter (fn [_] (defer-val 0))}
+                 {:leave (fn [_] (throw (ex-info "Error" {:a true})))
+                  :error (fn [e] (ex-info "Transform" {}))})]
+    
+    (is (:right (ex-data @(run i 0))))
+    (is (not (:wrong (ex-data @(run i 0)))))))
+
+(deftest error-order-test-async-leave2
+  (let [i (chain {:error (fn [e] (if (:a (ex-data e))
+                                   (ex-info "Wrong" {:wrong true})
+                                   (ex-info "Right" {:right true})))}
+                 {:enter (fn [_] (defer-val 0))}
+                 {:error (fn [e] (ex-info "Transform" {}))}
+                 {:leave (fn [_] (throw (ex-info "Error" {:a true})))})]
+    
+    (is (:right (ex-data @(run i 0))))
+    (is (not (:wrong (ex-data @(run i 0)))))))
